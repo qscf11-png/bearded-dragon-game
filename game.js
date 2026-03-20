@@ -7,11 +7,93 @@ const startBtn = document.getElementById('start-btn');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayDesc = document.getElementById('overlay-desc');
 
-// 遊戲設定
+// 遊戲基礎變數
 let score = 0;
 let lives = 3;
 let gameActive = false;
 let animationId;
+
+// --- 音效引擎 (Web Audio API) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const SoundManager = {
+    // 合成「啾」聲 (捕食成功)
+    playEat() {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+    },
+    // 合成「嗡」聲 (受傷/漏接)
+    playHurt() {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(110, audioCtx.currentTime + 0.2);
+        gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+    },
+    // 合成「遊戲結束」爆破聲
+    playGameOver() {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(110, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1, audioCtx.currentTime + 1);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 1);
+    }
+};
+
+// 背景音樂合成器 (簡單循環)
+const BGMManager = {
+    playing: false,
+    interval: null,
+    notes: [523.25, 659.25, 783.99, 1046.50, 783.99, 659.25], // C5, E5, G5, C6...
+    currentIndex: 0,
+    start() {
+        if (this.playing) return;
+        this.playing = true;
+        this.interval = setInterval(() => {
+            if (!gameActive) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.frequency.value = this.notes[this.currentIndex];
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0.02, audioCtx.currentTime); // 輕聲播放
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.5);
+            this.currentIndex = (this.currentIndex + 1) % this.notes.length;
+        }, 500);
+    },
+    stop() {
+        this.playing = false;
+        clearInterval(this.interval);
+    }
+};
+// ----------------------------
+
 
 // 載入資源
 const dragonImg = new Image();
@@ -232,6 +314,9 @@ function update() {
             items.splice(i, 1);
             updateUI();
             
+            // 觸發捕食音效
+            SoundManager.playEat();
+            
             // 吃到東西的特效 (改個顏色或縮放)
             player.height += 5;
             setTimeout(() => player.height -= 5, 200);
@@ -243,10 +328,12 @@ function update() {
             if (item.type !== 'pepper') {
                 lives--;
                 updateUI();
+                SoundManager.playHurt(); // 漏接音效
                 if (lives <= 0) gameOver();
             }
             items.splice(i, 1);
         }
+
     }
 
     draw();
@@ -269,6 +356,10 @@ function startGame() {
     updateUI();
     overlay.classList.add('hidden');
     spawnItem();
+    
+    // 啟動 BGM 與恢復 AudioContext
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    BGMManager.start();
 }
 
 function gameOver() {
@@ -277,6 +368,9 @@ function gameOver() {
     overlayDesc.textContent = `最終分數：${score}`;
     startBtn.textContent = '再玩一次';
     overlay.classList.remove('hidden');
+    
+    // 播放遊戲結束音效
+    SoundManager.playGameOver();
 }
 
 startBtn.addEventListener('click', startGame);
