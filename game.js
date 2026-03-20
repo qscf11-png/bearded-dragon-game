@@ -369,9 +369,13 @@ function gameOver() {
     startBtn.textContent = '再玩一次';
     overlay.classList.remove('hidden');
     
+    // 將分數存入 localStorage 供電子雞使用
+    localStorage.setItem('lastBugCatcherScore', score);
+    
     // 播放遊戲結束音效
     SoundManager.playGameOver();
 }
+
 
 startBtn.addEventListener('click', startGame);
 
